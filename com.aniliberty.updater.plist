@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aniliberty.updater</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/python3</string>
+        <string>%WORKING_DIR%/auto_update_torrents.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>%WORKING_DIR%</string>
+
+    <key>StandardOutPath</key>
+    <string>%WORKING_DIR%/output.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>%WORKING_DIR%/output.log</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

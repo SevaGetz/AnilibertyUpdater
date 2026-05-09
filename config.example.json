@@ -1,0 +1,22 @@
+{
+    "aniliberty": {
+        "api_url": "https://aniliberty.top/api/v1",
+        "check_interval": 300
+    },
+    "qbittorrent": {
+        "url": "http://localhost:8080",
+        "username": "admin",
+        "password": "adminadmin",
+        "download_path": ""
+    },
+    "tracked_releases": {
+        "10159": {
+            "name": "Вторая юность Хайбары",
+            "save_path": "/downloads/anime/haibara"
+        },
+        "10160": {
+            "name": "Другой релиз",
+            "save_path": ""
+        }
+    }
+}

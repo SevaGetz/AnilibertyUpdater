@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  aniliberty-updater:
+    build: .
+    container_name: aniliberty-updater
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/app/config.json
+      - ./state.json:/app/state.json
+      - ./auto_update_torrents.log:/app/auto_update_torrents.log
+      - ./temp_torrents:/app/temp_torrents
+    network_mode: host
+    environment:
+      - TZ=Europe/Moscow

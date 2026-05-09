@@ -1,0 +1,16 @@
+[Unit]
+Description=AniLiberty Torrent Auto Updater
+After=network.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%WORKING_DIR%
+ExecStart=/usr/bin/python3 %WORKING_DIR%/auto_update_torrents.py
+Restart=always
+RestartSec=10
+StandardOutput=append:%WORKING_DIR%/output.log
+StandardError=append:%WORKING_DIR%/output.log
+
+[Install]
+WantedBy=multi-user.target
