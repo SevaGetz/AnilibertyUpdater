@@ -28,38 +28,6 @@ sudo systemctl status aniliberty-updater
 sudo journalctl -u aniliberty-updater -f
 ```
 
-## macOS (launchd)
-
-1. Отредактируйте `com.aniliberty.updater.plist`:
-   - Замените `%WORKING_DIR%` на полный путь к директории проекта
-   - Проверьте путь к python3 (выполните `which python3`)
-
-2. Скопируйте файл в LaunchAgents:
-```bash
-cp com.aniliberty.updater.plist ~/Library/LaunchAgents/
-```
-
-3. Загрузите сервис:
-```bash
-launchctl load ~/Library/LaunchAgents/com.aniliberty.updater.plist
-```
-
-4. Запустите сервис:
-```bash
-launchctl start com.aniliberty.updater
-```
-
-5. Проверьте статус:
-```bash
-launchctl list | grep aniliberty
-```
-
-6. Остановка и выгрузка:
-```bash
-launchctl stop com.aniliberty.updater
-launchctl unload ~/Library/LaunchAgents/com.aniliberty.updater.plist
-```
-
 ## Windows (Task Scheduler)
 
 1. Откройте Task Scheduler (Планировщик заданий)
