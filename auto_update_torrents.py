@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Скрипт для автоматической проверки новых серий на AniLiberty
 и обновления торрентов в qBittorrent Web API
@@ -111,15 +112,16 @@ class AniLibertyAPI:
     def search_releases(self, query: str, limit: int = 10) -> List[Dict]:
         """Поиск релизов по названию"""
         try:
-            url = f"{self.api_url}/anime/catalog/releases"
-            params = {
-                'search': query,
-                'limit': limit
-            }
+            # ИСПРАВЛЕНИЕ: используем правильный endpoint /app/search/releases с параметром query
+            url = f"{self.api_url}/app/search/releases"
+            params = {'query': query}
             response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
-            return data.get('data', [])
+            # Ответ — массив релизов напрямую, обрезаем до limit
+            if isinstance(data, list):
+                return data[:limit]
+            return data.get('data', [])[:limit]
         except requests.RequestException as e:
             logger.error(f"Ошибка при поиске релизов: {e}")
             return []
@@ -143,13 +145,11 @@ class QBittorrentAPI:
                 data={'username': self.username, 'password': self.password},
                 timeout=10
             )
-
             if response.status_code == 200 and response.text == 'Ok.':
                 self.logged_in = True
                 logger.info("Успешная авторизация в qBittorrent")
                 return True
             elif response.status_code == 204:
-                # Новые версии qBittorrent возвращают 204 No Content
                 self.logged_in = True
                 logger.info("Успешная авторизация в qBittorrent")
                 return True
@@ -164,7 +164,6 @@ class QBittorrentAPI:
         """Получить список всех торрентов"""
         if not self.logged_in and not self.login():
             return []
-
         try:
             response = self.session.get(f"{self.url}/api/v2/torrents/info", timeout=10)
             response.raise_for_status()
@@ -177,7 +176,6 @@ class QBittorrentAPI:
         """Добавить торрент"""
         if not self.logged_in and not self.login():
             return False
-
         try:
             with open(torrent_path, 'rb') as f:
                 files = {'torrents': f}
@@ -194,31 +192,27 @@ class QBittorrentAPI:
                     timeout=30
                 )
 
-                # Старые версии qBittorrent возвращают "Ok."
-                if response.text == 'Ok.':
+            if response.text == 'Ok.':
+                logger.info(f"Торрент успешно добавлен: {torrent_path}")
+                return True
+
+            if response.text == 'Conflict':
+                logger.info(f"Торрент уже существует в qBittorrent: {torrent_path}")
+                return True
+
+            try:
+                result = response.json()
+                if result.get('success_count', 0) > 0:
                     logger.info(f"Торрент успешно добавлен: {torrent_path}")
                     return True
+                elif result.get('failure_count', 0) > 0:
+                    logger.error(f"Ошибка при добавлении торрента: {response.text}")
+                    return False
+            except Exception:
+                pass
 
-                # Торрент уже существует
-                if response.text == 'Conflict':
-                    logger.info(f"Торрент уже существует в qBittorrent: {torrent_path}")
-                    return True
-
-                # Новые версии возвращают JSON с результатами
-                try:
-                    result = response.json()
-                    if result.get('success_count', 0) > 0:
-                        logger.info(f"Торрент успешно добавлен: {torrent_path}")
-                        return True
-                    elif result.get('failure_count', 0) > 0:
-                        logger.error(f"Ошибка при добавлении торрента: {response.text}")
-                        return False
-                except:
-                    pass
-
-                # Если не удалось распарсить, считаем ошибкой
-                logger.error(f"Неожиданный ответ при добавлении торрента: {response.text}")
-                return False
+            logger.error(f"Неожиданный ответ при добавлении торрента: {response.text}")
+            return False
         except Exception as e:
             logger.error(f"Ошибка при добавлении торрента: {e}")
             return False
@@ -227,8 +221,9 @@ class QBittorrentAPI:
         """Удалить торрент"""
         if not self.logged_in and not self.login():
             return False
-
         try:
+            # ИСПРАВЛЕНИЕ: приводим хэш к нижнему регистру — qBittorrent хранит хэши в нижнем регистре
+            torrent_hash = torrent_hash.lower()
             response = self.session.post(
                 f"{self.url}/api/v2/torrents/delete",
                 data={
@@ -237,7 +232,6 @@ class QBittorrentAPI:
                 },
                 timeout=10
             )
-
             if response.status_code == 200:
                 logger.info(f"Торрент удален: {torrent_hash}")
                 return True
@@ -301,27 +295,25 @@ class TorrentUpdater:
         # Среди торрентов с самой свежей датой выбираем самый легкий
         latest_date = torrents[0].get('updated_at', '')
         latest_torrents = [t for t in torrents if t.get('updated_at', '') == latest_date]
-
-        # Выбираем торрент с наименьшим размером
         latest_torrent = min(latest_torrents, key=lambda x: x.get('size', float('inf')))
 
         size_mb = latest_torrent.get('size', 0) / (1024 * 1024)
         logger.info(f"  Выбран торрент: {latest_torrent.get('label', 'N/A')}")
         logger.info(f"  Размер: {size_mb:.2f} MB")
 
-        # Проверяем, есть ли обновление
+        # ИСПРАВЛЕНИЕ: нормализуем хэш к нижнему регистру для сравнения
+        new_hash = latest_torrent['hash'].lower()
+
         release_key = str(release_id)
         if release_key in self.state:
-            last_hash = self.state[release_key].get('hash')
-            last_updated = self.state[release_key].get('updated_at')
-
-            if last_hash == latest_torrent['hash']:
+            last_hash = self.state[release_key].get('hash', '').lower()
+            if last_hash == new_hash:
                 logger.info(f"Релиз {release_id} не обновлялся")
                 return None
 
             logger.info(f"Найдено обновление для релиза {release_id}")
             logger.info(f"  Старый hash: {last_hash}")
-            logger.info(f"  Новый hash: {latest_torrent['hash']}")
+            logger.info(f"  Новый hash: {new_hash}")
             logger.info(f"  Описание: {latest_torrent.get('description', 'N/A')}")
         else:
             logger.info(f"Релиз {release_id} добавлен в отслеживание")
@@ -332,11 +324,14 @@ class TorrentUpdater:
         """Обновить торрент в qBittorrent"""
         release_key = str(release_id)
 
+        # ИСПРАВЛЕНИЕ: нормализуем хэш к нижнему регистру
+        new_hash = new_torrent['hash'].lower()
+
         # Скачиваем новый торрент-файл
-        torrent_filename = f"release_{release_id}_{new_torrent['hash']}.torrent"
+        torrent_filename = f"release_{release_id}_{new_hash}.torrent"
         torrent_path = self.temp_dir / torrent_filename
 
-        if not self.aniliberty.get_torrent_file(new_torrent['hash'], str(torrent_path)):
+        if not self.aniliberty.get_torrent_file(new_hash, str(torrent_path)):
             return False
 
         # Если есть старый торрент, удаляем его
@@ -344,26 +339,26 @@ class TorrentUpdater:
             old_hash = self.state[release_key].get('qb_hash')
             if old_hash:
                 logger.info(f"Удаление старого торрента: {old_hash}")
+                # delete_torrent уже нормализует хэш внутри себя
                 self.qbittorrent.delete_torrent(old_hash, delete_files=False)
 
         # Добавляем новый торрент
         category = f"AniLiberty_{release_id}"
         if self.qbittorrent.add_torrent(str(torrent_path), category, save_path):
-            # Обновляем состояние
+            # Обновляем состояние — всегда сохраняем хэш в нижнем регистре
             self.state[release_key] = {
-                'hash': new_torrent['hash'],
+                'hash': new_hash,
                 'updated_at': new_torrent.get('updated_at'),
                 'description': new_torrent.get('description'),
-                'qb_hash': new_torrent['hash'].lower(),
+                'qb_hash': new_hash,
                 'last_check': datetime.now().isoformat(),
                 'save_path': save_path or ''
             }
             self._save_state()
 
-            # Удаляем временный файл
             try:
                 os.remove(torrent_path)
-            except:
+            except Exception:
                 pass
 
             return True
@@ -385,12 +380,10 @@ class TorrentUpdater:
                 release_id = int(release_id)
                 save_path = release_config.get('save_path') if isinstance(release_config, dict) else None
 
-                # Если save_path не указан для релиза, используем глобальный
                 if not save_path:
                     save_path = self.config.config['qbittorrent'].get('download_path', '')
 
                 new_torrent = self.check_release_updates(release_id)
-
                 if new_torrent:
                     logger.info(f"Обновление торрента для релиза {release_id}")
                     if self.update_torrent(release_id, new_torrent, save_path):
@@ -398,7 +391,6 @@ class TorrentUpdater:
                     else:
                         logger.error(f"✗ Ошибка при обновлении релиза {release_id}")
 
-                # Небольшая задержка между запросами
                 time.sleep(2)
 
             except Exception as e:
@@ -406,12 +398,9 @@ class TorrentUpdater:
 
         logger.info("Проверка завершена")
 
-        logger.info("Проверка завершена")
-
     def run_loop(self):
         """Запустить бесконечный цикл проверки"""
         check_interval = self.config.config['aniliberty'].get('check_interval', 300)
-
         logger.info(f"Запуск мониторинга с интервалом {check_interval} секунд")
 
         while True:
@@ -488,17 +477,16 @@ def main():
             if choice == 0:
                 print("Отменено")
                 return
+
             if 1 <= choice <= len(results):
                 selected = results[choice - 1]
                 release_id = selected['id']
                 release_name = selected['name']['main']
 
-                # Запрос пути сохранения
                 save_path = args.save_path
                 if not save_path:
                     save_path = input(f"Путь сохранения для '{release_name}' (Enter для пути по умолчанию): ").strip()
 
-                # Добавляем релиз
                 release_key = str(release_id)
                 if release_key not in config.config['tracked_releases']:
                     config.config['tracked_releases'][release_key] = {
@@ -520,8 +508,6 @@ def main():
     # Добавление релиза по ID
     if args.add_release:
         release_key = str(args.add_release)
-
-        # Получаем информацию о релизе
         release_info = aniliberty.get_release_info(args.add_release)
         release_name = release_info['name']['main'] if release_info else f"Release {args.add_release}"
 
